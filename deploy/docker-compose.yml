@@ -1,0 +1,70 @@
+name: asamblor-crm
+
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: packages/twenty-docker/twenty/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_PORT: 3000
+      PG_DATABASE_URL: postgres://${PG_DATABASE_USER:-postgres}:${PG_DATABASE_PASSWORD:-postgres}@${PG_DATABASE_HOST:-db}:${PG_DATABASE_PORT:-5432}/${PG_DATABASE_NAME:-default}
+      SERVER_URL: ${SERVER_URL}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      DISABLE_DB_MIGRATIONS: "false"
+      APP_SECRET: ${APP_SECRET}
+      STORAGE_TYPE: ${STORAGE_TYPE:-local}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+
+  worker:
+    build:
+      context: ..
+      dockerfile: packages/twenty-docker/twenty/Dockerfile
+    command: ["node", "dist/main", "--worker"] # Standard Twenty worker command
+    environment:
+      PG_DATABASE_URL: postgres://${PG_DATABASE_USER:-postgres}:${PG_DATABASE_PASSWORD:-postgres}@${PG_DATABASE_HOST:-db}:${PG_DATABASE_PORT:-5432}/${PG_DATABASE_NAME:-default}
+      SERVER_URL: ${SERVER_URL}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      DISABLE_DB_MIGRATIONS: "true"
+      APP_SECRET: ${APP_SECRET}
+    depends_on:
+      db:
+        condition: service_healthy
+      server:
+        condition: service_healthy
+    restart: always
+
+  db:
+    image: postgres:16
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${PG_DATABASE_NAME:-default}
+      POSTGRES_PASSWORD: ${PG_DATABASE_PASSWORD:-postgres}
+      POSTGRES_USER: ${PG_DATABASE_USER:-postgres}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_DATABASE_USER:-postgres} -h localhost -d ${PG_DATABASE_NAME:-default}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: always
+
+  redis:
+    image: redis:alpine
+    restart: always
+    command: ["--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db-data:
+  server-local-data:
